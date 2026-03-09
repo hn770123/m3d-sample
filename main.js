@@ -2,17 +2,37 @@
  * @file main.js
  * @description 3Dレンダリングのメインスクリプト。Three.jsを利用してiPhoneのSafariなどのモバイルブラウザ上で、
  *              裸眼立体視（平行法）ができるように画面を左右に分割してキューブを描画します。
- *              また、タッチ操作によってキューブの回転速度やカメラとキューブとの距離を変更できます。
+ *              また、タッチ操作によってキューブの回転速度やキューブのサイズを変更できます。
  */
 
 import * as THREE from 'three';
 
-// 画面分割による平行法の立体視を行うためのパラメータ
+// 画面分割による平行法の立体視を行うためのパラメータ (1ユニット = 1cm)
+// iPhone 15 Plus 画面幅: 約7.2cm
+// 画面幅の半分: 3.6cm
+// 画面までの距離: 20cm
+// 視野角(FOV): 画面幅の半分(3.6cm)と距離(20cm)から計算
+const screenWidth = 7.2;
+const halfScreenWidth = screenWidth / 2;
+const cameraDistance = 20;
+
+// FOV = 2 * arctan((画面高/2) / 距離)
+// ただしアスペクト比(縦横比)を元にThree.jsは縦方向のFOVを要求するため、
+// ここではiPhoneの縦画面(または横画面)を考慮する必要があるが、
+// モバイル横持ち(平行法)を想定し、縦幅(height)に対してFOVを計算する。
+// アスペクト比が横幅(3.6cm)/縦幅(h)とすると、縦方向のFOVは h/2 で計算する。
+// 厳密な画面高(約16cm)の半分8cmで計算するか、とりあえず横幅3.6cmから横FOVを計算し、縦FOVに変換する。
+// THREE.PerspectiveCamera の fov は「垂直視野角 (Vertical FOV)」である。
+// カメラから画面(幅3.6cm)がぴったり収まるようにするには、
+// 横FOV = 2 * atan((3.6 / 2) / 20)
+// 縦FOV = 横FOV / aspect (近似)
+// 簡単のため、横画面とみなして直接計算する。
+const horizontalFOV = 2 * Math.atan((halfScreenWidth / 2) / cameraDistance) * (180 / Math.PI);
+
 const params = {
-    eyeSeparation: 0.05, // 視差（眼の距離オフセット）
-    fov: 50,             // 視野角
+    eyeSeparation: 6.4,  // 視差（瞳孔間距離） 6.4cm
     near: 0.1,           // ニアクリップ
-    far: 10              // ファークリップ
+    far: 100             // ファークリップ
 };
 
 // --- グローバル変数 ---
@@ -23,7 +43,7 @@ let cube;
 // タッチインタラクション用の変数
 let rotationSpeedX = 0.005; // X軸の回転速度
 let rotationSpeedY = 0.01;  // Y軸の回転速度
-let cameraDistance = 4;     // カメラからキューブまでの距離(Z軸)
+let cubeScale = 1.0;        // キューブのサイズ(倍率)
 let touchStartX = 0;        // タッチ開始時のX座標
 let touchStartY = 0;        // タッチ開始時のY座標
 
@@ -43,7 +63,7 @@ function init() {
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio); // Retinaディスプレイ対応
     renderer.setSize(window.innerWidth, window.innerHeight);
-    // スハサテストを有効化し、部分描画（Viewportの分割）を可能にする
+    // シザーテストを有効化し、部分描画（Viewportの分割）を可能にする
     renderer.setScissorTest(true);
     document.body.appendChild(renderer.domElement);
 
@@ -51,36 +71,39 @@ function init() {
     // アスペクト比は左右それぞれ画面の半分になるため、window.innerWidth / 2 で計算
     const aspect = (window.innerWidth / 2) / window.innerHeight;
 
-    // 平行法（Parallel Viewing）のためのカメラ設定
-    // 左右にわずかにオフセットを持たせる
-    cameraLeft = new THREE.PerspectiveCamera(params.fov, aspect, params.near, params.far);
-    cameraLeft.position.z = 4; // キューブ全体が見えるように少し離す
-    // 左目のカメラは少し左へ
-    cameraLeft.position.x = -params.eyeSeparation / 2;
+    // 縦FOVの計算 (横FOVからアスペクト比を使って逆算)
+    // tan(vFOV / 2) = tan(hFOV / 2) / aspect
+    // vFOV = 2 * atan( tan(hFOV / 2) / aspect )
+    const verticalFOV = 2 * Math.atan(Math.tan((horizontalFOV * Math.PI / 180) / 2) / aspect) * (180 / Math.PI);
 
-    cameraRight = new THREE.PerspectiveCamera(params.fov, aspect, params.near, params.far);
-    cameraRight.position.z = 4; // キューブ全体が見えるように少し離す
-    // 右目のカメラは少し右へ
-    cameraRight.position.x = params.eyeSeparation / 2;
+    // 平行法（Parallel Viewing）かつ Toe-in 方式のためのカメラ設定
+    cameraLeft = new THREE.PerspectiveCamera(verticalFOV, aspect, params.near, params.far);
+    cameraLeft.position.z = cameraDistance;
+    cameraLeft.position.x = -params.eyeSeparation / 2; // -3.2cm
+    cameraLeft.lookAt(0, 0, 0); // 原点（画面中央）を凝視
+
+    cameraRight = new THREE.PerspectiveCamera(verticalFOV, aspect, params.near, params.far);
+    cameraRight.position.z = cameraDistance;
+    cameraRight.position.x = params.eyeSeparation / 2; // 3.2cm
+    cameraRight.lookAt(0, 0, 0); // 原点（画面中央）を凝視
 
     // 4. Object（キューブ）の作成
-    // サイズを 1x1x1 とする
-    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    // サイズを 3x3x3 (3cm角) とする
+    const geometry = new THREE.BoxGeometry(3, 3, 3);
 
     // ワイヤーフレーム用のジオメトリに変換
     const edges = new THREE.EdgesGeometry(geometry);
 
     // 位置ごとに色を変えるための処理
-    // LineSegmentsの場合、頂点ごとに色を指定できる
     const colors = [];
     const positions = edges.attributes.position.array;
 
     // 頂点の座標(X,Y,Z)を正規化してRGBカラーにマッピング
     for (let i = 0; i < positions.length; i += 3) {
-        // -0.5 ~ 0.5 の範囲を 0.0 ~ 1.0 に変換
-        const r = positions[i] + 0.5;
-        const g = positions[i+1] + 0.5;
-        const b = positions[i+2] + 0.5;
+        // -1.5 ~ 1.5 の範囲を 0.0 ~ 1.0 に変換
+        const r = (positions[i] / 3) + 0.5;
+        const g = (positions[i+1] / 3) + 0.5;
+        const b = (positions[i+2] / 3) + 0.5;
         colors.push(r, g, b);
     }
 
@@ -90,7 +113,7 @@ function init() {
     // vertexColors: true を指定してマテリアルを作成し、頂点カラーを反映させる
     const material = new THREE.LineBasicMaterial({
         vertexColors: true,
-        linewidth: 2 // 注意: WebGLの制限によりlinewidthは現在1以上で太くならないことが多い
+        linewidth: 2
     });
 
     cube = new THREE.LineSegments(edges, material);
@@ -99,9 +122,9 @@ function init() {
     // 5. リサイズイベントとタッチイベントの登録
     window.addEventListener('resize', onWindowResize);
 
-    // ポインターイベントの登録 (iOS Safari等のマルチデバイス対応のため PointerEvent を使用)
+    // ポインターイベントの登録
     const canvas = renderer.domElement;
-    canvas.style.touchAction = 'none'; // ブラウザのデフォルトのタッチ操作（スクロールやズーム）を無効化
+    canvas.style.touchAction = 'none'; // ブラウザのデフォルトのタッチ操作を無効化
     canvas.addEventListener('pointerdown', onPointerDown);
     canvas.addEventListener('pointermove', onPointerMove);
     canvas.addEventListener('pointerup', onPointerUp);
@@ -119,7 +142,6 @@ function onPointerDown(event) {
     isPointerDown = true;
     touchStartX = event.clientX;
     touchStartY = event.clientY;
-    // ポインターキャプチャを設定し、要素外へ出てもイベントを追跡できるようにする
     event.target.setPointerCapture(event.pointerId);
 }
 
@@ -136,36 +158,30 @@ function onPointerMove(event) {
     const touchCurrentX = event.clientX;
     const touchCurrentY = event.clientY;
 
-    // X軸方向の移動量 (右スワイプでプラス、左スワイプでマイナス)
     const deltaX = touchCurrentX - touchStartX;
-    // Y軸方向の移動量 (下スワイプでプラス、上スワイプでマイナス)
     const deltaY = touchCurrentY - touchStartY;
 
     // 1. 左右のスワイプによる回転速度の変更
-    // 感度調整係数
     const sensitivityX = 0.0001;
-
-    // 右にスワイプ(deltaX > 0)すると速度が上がり、左にスワイプ(deltaX < 0)すると速度が下がる
     rotationSpeedX += deltaX * sensitivityX;
-    rotationSpeedY += (deltaX * sensitivityX * 2); // Y軸の初期値が2倍だったのでそれに合わせる
+    rotationSpeedY += (deltaX * sensitivityX * 2);
 
-    // 左スワイプで速度がマイナスにならないよう、下限を0に設定
     if (rotationSpeedX < 0) rotationSpeedX = 0;
     if (rotationSpeedY < 0) rotationSpeedY = 0;
 
-    // 2. 上下のスワイプによるカメラ距離の変更
+    // 2. 上下のスワイプによるキューブサイズの変更
     // 感度調整係数
     const sensitivityY = 0.01;
 
-    // 上スワイプ(deltaY < 0)で遠ざかる(Z距離が増加)、下スワイプ(deltaY > 0)で近づく(Z距離が減少)
-    // ユーザーから見て、上にスワイプすると奥に行くイメージなので、deltaYをマイナスすることで実現する
-    cameraDistance -= deltaY * sensitivityY;
+    // 上スワイプ(deltaY < 0)で拡大、下スワイプ(deltaY > 0)で縮小
+    cubeScale -= deltaY * sensitivityY;
 
-    // 限界値は設けないが、Z軸距離がマイナスになると裏側に回ってしまうため、十分小さな値を下限とする
-    if (cameraDistance < 0.1) cameraDistance = 0.1;
+    // スケールに制限は設けないが、マイナス反転によるチラつき防止のため
+    // 最低限の非常に小さなスケールは維持する（0未満を許容する場合はこれを外すが、
+    // 完全に0になると見えなくなるため0.01を担保）
+    if (cubeScale < 0.01) cubeScale = 0.01;
 
-    cameraLeft.position.z = cameraDistance;
-    cameraRight.position.z = cameraDistance;
+    cube.scale.set(cubeScale, cubeScale, cubeScale);
 
     // 次の移動差分を計算するために、現在の座標を保存
     touchStartX = touchCurrentX;
@@ -186,16 +202,19 @@ function onPointerUp(event) {
  * 画面分割のアスペクト比を再計算し、カメラとレンダラーを更新します。
  */
 function onWindowResize() {
-    // 画面の半分のサイズからアスペクト比を再計算
     const aspect = (window.innerWidth / 2) / window.innerHeight;
 
+    // 縦FOVの再計算
+    const verticalFOV = 2 * Math.atan(Math.tan((horizontalFOV * Math.PI / 180) / 2) / aspect) * (180 / Math.PI);
+
+    cameraLeft.fov = verticalFOV;
     cameraLeft.aspect = aspect;
     cameraLeft.updateProjectionMatrix();
 
+    cameraRight.fov = verticalFOV;
     cameraRight.aspect = aspect;
     cameraRight.updateProjectionMatrix();
 
-    // レンダラーのサイズを更新
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
@@ -206,7 +225,6 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
 
-    // 変数で管理している速度でキューブを回転させる
     cube.rotation.x += rotationSpeedX;
     cube.rotation.y += rotationSpeedY;
 
@@ -215,8 +233,6 @@ function animate() {
 
 /**
  * 画面を左右に分割してレンダリングする処理
- * シザーテスト(ScissorTest)とビューポート(Viewport)を利用して、画面の左半分と右半分に
- * それぞれ別のカメラからの映像を描画します。
  */
 function render() {
     const width = window.innerWidth;
@@ -224,13 +240,11 @@ function render() {
     const halfWidth = width / 2;
 
     // --- 左画面（Left Camera）のレンダリング ---
-    // 左半分にビューポートとシザーを設定 (x, y, width, height)
     renderer.setViewport(0, 0, halfWidth, height);
     renderer.setScissor(0, 0, halfWidth, height);
     renderer.render(scene, cameraLeft);
 
     // --- 右画面（Right Camera）のレンダリング ---
-    // 右半分にビューポートとシザーを設定
     renderer.setViewport(halfWidth, 0, halfWidth, height);
     renderer.setScissor(halfWidth, 0, halfWidth, height);
     renderer.render(scene, cameraRight);
