@@ -99,69 +99,86 @@ function init() {
     // 5. リサイズイベントとタッチイベントの登録
     window.addEventListener('resize', onWindowResize);
 
-    // タッチイベントの登録 (iOS Safari特有の挙動を防ぐため passive: false を指定)
-    window.addEventListener('touchstart', onTouchStart, { passive: false });
-    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    // ポインターイベントの登録 (iOS Safari等のマルチデバイス対応のため PointerEvent を使用)
+    const canvas = renderer.domElement;
+    canvas.style.touchAction = 'none'; // ブラウザのデフォルトのタッチ操作（スクロールやズーム）を無効化
+    canvas.addEventListener('pointerdown', onPointerDown);
+    canvas.addEventListener('pointermove', onPointerMove);
+    canvas.addEventListener('pointerup', onPointerUp);
+    canvas.addEventListener('pointercancel', onPointerUp);
+}
+
+// ポインター操作状態を管理するフラグ
+let isPointerDown = false;
+
+/**
+ * ポインター操作開始時のイベントハンドラ
+ * @param {PointerEvent} event - ポインターイベントオブジェクト
+ */
+function onPointerDown(event) {
+    isPointerDown = true;
+    touchStartX = event.clientX;
+    touchStartY = event.clientY;
+    // ポインターキャプチャを設定し、要素外へ出てもイベントを追跡できるようにする
+    event.target.setPointerCapture(event.pointerId);
 }
 
 /**
- * タッチ開始時のイベントハンドラ
- * @param {TouchEvent} event - タッチイベントオブジェクト
+ * ポインター移動中のイベントハンドラ
+ * @param {PointerEvent} event - ポインターイベントオブジェクト
  */
-function onTouchStart(event) {
-    if (event.touches.length > 0) {
-        touchStartX = event.touches[0].clientX;
-        touchStartY = event.touches[0].clientY;
-    }
-}
+function onPointerMove(event) {
+    if (!isPointerDown) return;
 
-/**
- * タッチ移動中のイベントハンドラ
- * @param {TouchEvent} event - タッチイベントオブジェクト
- */
-function onTouchMove(event) {
     // デフォルトのスクロール挙動（バウンスなど）を防止
     event.preventDefault();
 
-    if (event.touches.length > 0) {
-        const touchCurrentX = event.touches[0].clientX;
-        const touchCurrentY = event.touches[0].clientY;
+    const touchCurrentX = event.clientX;
+    const touchCurrentY = event.clientY;
 
-        // X軸方向の移動量 (右スワイプでプラス、左スワイプでマイナス)
-        const deltaX = touchCurrentX - touchStartX;
-        // Y軸方向の移動量 (下スワイプでプラス、上スワイプでマイナス)
-        const deltaY = touchCurrentY - touchStartY;
+    // X軸方向の移動量 (右スワイプでプラス、左スワイプでマイナス)
+    const deltaX = touchCurrentX - touchStartX;
+    // Y軸方向の移動量 (下スワイプでプラス、上スワイプでマイナス)
+    const deltaY = touchCurrentY - touchStartY;
 
-        // 1. 左右のスワイプによる回転速度の変更
-        // 感度調整係数
-        const sensitivityX = 0.0001;
+    // 1. 左右のスワイプによる回転速度の変更
+    // 感度調整係数
+    const sensitivityX = 0.0001;
 
-        // 右にスワイプ(deltaX > 0)すると速度が上がり、左にスワイプ(deltaX < 0)すると速度が下がる
-        rotationSpeedX += deltaX * sensitivityX;
-        rotationSpeedY += (deltaX * sensitivityX * 2); // Y軸の初期値が2倍だったのでそれに合わせる
+    // 右にスワイプ(deltaX > 0)すると速度が上がり、左にスワイプ(deltaX < 0)すると速度が下がる
+    rotationSpeedX += deltaX * sensitivityX;
+    rotationSpeedY += (deltaX * sensitivityX * 2); // Y軸の初期値が2倍だったのでそれに合わせる
 
-        // 左スワイプで速度がマイナスにならないよう、下限を0に設定
-        if (rotationSpeedX < 0) rotationSpeedX = 0;
-        if (rotationSpeedY < 0) rotationSpeedY = 0;
+    // 左スワイプで速度がマイナスにならないよう、下限を0に設定
+    if (rotationSpeedX < 0) rotationSpeedX = 0;
+    if (rotationSpeedY < 0) rotationSpeedY = 0;
 
-        // 2. 上下のスワイプによるカメラ距離の変更
-        // 感度調整係数
-        const sensitivityY = 0.01;
+    // 2. 上下のスワイプによるカメラ距離の変更
+    // 感度調整係数
+    const sensitivityY = 0.01;
 
-        // 上スワイプ(deltaY < 0)で遠ざかる(Z距離が増加)、下スワイプ(deltaY > 0)で近づく(Z距離が減少)
-        // ユーザーから見て、上にスワイプすると奥に行くイメージなので、deltaYをマイナスすることで実現する
-        cameraDistance -= deltaY * sensitivityY;
+    // 上スワイプ(deltaY < 0)で遠ざかる(Z距離が増加)、下スワイプ(deltaY > 0)で近づく(Z距離が減少)
+    // ユーザーから見て、上にスワイプすると奥に行くイメージなので、deltaYをマイナスすることで実現する
+    cameraDistance -= deltaY * sensitivityY;
 
-        // 限界値は設けないが、Z軸距離がマイナスになると裏側に回ってしまうため、十分小さな値を下限とする
-        if (cameraDistance < 0.1) cameraDistance = 0.1;
+    // 限界値は設けないが、Z軸距離がマイナスになると裏側に回ってしまうため、十分小さな値を下限とする
+    if (cameraDistance < 0.1) cameraDistance = 0.1;
 
-        cameraLeft.position.z = cameraDistance;
-        cameraRight.position.z = cameraDistance;
+    cameraLeft.position.z = cameraDistance;
+    cameraRight.position.z = cameraDistance;
 
-        // 次の移動差分を計算するために、現在の座標を保存
-        touchStartX = touchCurrentX;
-        touchStartY = touchCurrentY;
-    }
+    // 次の移動差分を計算するために、現在の座標を保存
+    touchStartX = touchCurrentX;
+    touchStartY = touchCurrentY;
+}
+
+/**
+ * ポインター操作終了・キャンセル時のイベントハンドラ
+ * @param {PointerEvent} event - ポインターイベントオブジェクト
+ */
+function onPointerUp(event) {
+    isPointerDown = false;
+    event.target.releasePointerCapture(event.pointerId);
 }
 
 /**
