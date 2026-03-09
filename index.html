@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <!-- スマホでの拡大縮小を防止し、画面サイズに合わせる -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>iPhone Safari 3D Rendering Test (Parallel Viewing)</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Three.jsをESモジュールとして読み込むためのインポートマップ -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <!-- メインのスクリプトをモジュールとして読み込む -->
+    <script type="module" src="main.js"></script>
+</body>
+</html>
