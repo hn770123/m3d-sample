@@ -135,6 +135,7 @@ function createCube(size) {
     });
 
     cube = new THREE.LineSegments(edges, material);
+    cube.position.z = 1; // 画面(Z=0)より1cm手前に配置して浮き出させる
     scene.add(cube);
 }
 
