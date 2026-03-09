@@ -40,14 +40,13 @@ let scene, renderer;
 let cameraLeft, cameraRight;
 let cube;
 
-// タッチインタラクション用の変数
+// コントローラー用の変数
 let rotationSpeedX = 0.005; // X軸の回転速度
 let rotationSpeedY = 0.01;  // Y軸の回転速度
-let cubeScale = 1.0;        // キューブのサイズ(倍率)
-let touchStartX = 0;        // タッチ開始時のX座標
-let touchStartY = 0;        // タッチ開始時のY座標
+let currentCubeSize = 3.0;  // キューブの現在のサイズ(cm)
 
 init();
+setupControllers();
 animate();
 
 /**
@@ -88,8 +87,26 @@ function init() {
     cameraRight.lookAt(0, 0, 0); // 原点（画面中央）を凝視
 
     // 4. Object（キューブ）の作成
-    // サイズを 3x3x3 (3cm角) とする
-    const geometry = new THREE.BoxGeometry(3, 3, 3);
+    createCube(currentCubeSize);
+
+    // 5. リサイズイベントの登録
+    window.addEventListener('resize', onWindowResize);
+}
+
+/**
+ * 指定したサイズでキューブを再生成する処理
+ * @param {number} size - キューブの1辺のサイズ（cm）
+ */
+function createCube(size) {
+    // 既存のキューブがあれば削除してメモリを解放
+    if (cube) {
+        scene.remove(cube);
+        cube.geometry.dispose();
+        cube.material.dispose();
+    }
+
+    // 新しいサイズのジオメトリを作成
+    const geometry = new THREE.BoxGeometry(size, size, size);
 
     // ワイヤーフレーム用のジオメトリに変換
     const edges = new THREE.EdgesGeometry(geometry);
@@ -99,11 +116,12 @@ function init() {
     const positions = edges.attributes.position.array;
 
     // 頂点の座標(X,Y,Z)を正規化してRGBカラーにマッピング
+    const halfSize = size / 2;
     for (let i = 0; i < positions.length; i += 3) {
-        // -1.5 ~ 1.5 の範囲を 0.0 ~ 1.0 に変換
-        const r = (positions[i] / 3) + 0.5;
-        const g = (positions[i+1] / 3) + 0.5;
-        const b = (positions[i+2] / 3) + 0.5;
+        // -halfSize ~ halfSize の範囲を 0.0 ~ 1.0 に変換
+        const r = (positions[i] / size) + 0.5;
+        const g = (positions[i+1] / size) + 0.5;
+        const b = (positions[i+2] / size) + 0.5;
         colors.push(r, g, b);
     }
 
@@ -118,83 +136,42 @@ function init() {
 
     cube = new THREE.LineSegments(edges, material);
     scene.add(cube);
-
-    // 5. リサイズイベントとタッチイベントの登録
-    window.addEventListener('resize', onWindowResize);
-
-    // ポインターイベントの登録
-    const canvas = renderer.domElement;
-    canvas.style.touchAction = 'none'; // ブラウザのデフォルトのタッチ操作を無効化
-    canvas.addEventListener('pointerdown', onPointerDown);
-    canvas.addEventListener('pointermove', onPointerMove);
-    canvas.addEventListener('pointerup', onPointerUp);
-    canvas.addEventListener('pointercancel', onPointerUp);
-}
-
-// ポインター操作状態を管理するフラグ
-let isPointerDown = false;
-
-/**
- * ポインター操作開始時のイベントハンドラ
- * @param {PointerEvent} event - ポインターイベントオブジェクト
- */
-function onPointerDown(event) {
-    isPointerDown = true;
-    touchStartX = event.clientX;
-    touchStartY = event.clientY;
-    event.target.setPointerCapture(event.pointerId);
 }
 
 /**
- * ポインター移動中のイベントハンドラ
- * @param {PointerEvent} event - ポインターイベントオブジェクト
+ * コントローラーの各ボタンのイベントリスナーを登録する処理
  */
-function onPointerMove(event) {
-    if (!isPointerDown) return;
+function setupControllers() {
+    const btnLarge = document.getElementById('btn-large');
+    const btnSmall = document.getElementById('btn-small');
+    const btnFast = document.getElementById('btn-fast');
+    const btnSlow = document.getElementById('btn-slow');
 
-    // デフォルトのスクロール挙動（バウンスなど）を防止
-    event.preventDefault();
+    // 「大」ボタン：サイズを10%増加して再生成
+    btnLarge.addEventListener('click', () => {
+        currentCubeSize *= 1.1;
+        createCube(currentCubeSize);
+    });
 
-    const touchCurrentX = event.clientX;
-    const touchCurrentY = event.clientY;
+    // 「小」ボタン：サイズを10%減少して再生成
+    btnSmall.addEventListener('click', () => {
+        currentCubeSize *= 0.9;
+        // 小さくなりすぎるのを防ぐ（例えば0.1cm以下にしない）
+        if (currentCubeSize < 0.1) currentCubeSize = 0.1;
+        createCube(currentCubeSize);
+    });
 
-    const deltaX = touchCurrentX - touchStartX;
-    const deltaY = touchCurrentY - touchStartY;
+    // 「速」ボタン：回転速度を2倍にする
+    btnFast.addEventListener('click', () => {
+        rotationSpeedX *= 2.0;
+        rotationSpeedY *= 2.0;
+    });
 
-    // 1. 左右のスワイプによる回転速度の変更
-    const sensitivityX = 0.0001;
-    rotationSpeedX += deltaX * sensitivityX;
-    rotationSpeedY += (deltaX * sensitivityX * 2);
-
-    if (rotationSpeedX < 0) rotationSpeedX = 0;
-    if (rotationSpeedY < 0) rotationSpeedY = 0;
-
-    // 2. 上下のスワイプによるキューブサイズの変更
-    // 感度調整係数
-    const sensitivityY = 0.01;
-
-    // 上スワイプ(deltaY < 0)で拡大、下スワイプ(deltaY > 0)で縮小
-    cubeScale -= deltaY * sensitivityY;
-
-    // スケールに制限は設けないが、マイナス反転によるチラつき防止のため
-    // 最低限の非常に小さなスケールは維持する（0未満を許容する場合はこれを外すが、
-    // 完全に0になると見えなくなるため0.01を担保）
-    if (cubeScale < 0.01) cubeScale = 0.01;
-
-    cube.scale.set(cubeScale, cubeScale, cubeScale);
-
-    // 次の移動差分を計算するために、現在の座標を保存
-    touchStartX = touchCurrentX;
-    touchStartY = touchCurrentY;
-}
-
-/**
- * ポインター操作終了・キャンセル時のイベントハンドラ
- * @param {PointerEvent} event - ポインターイベントオブジェクト
- */
-function onPointerUp(event) {
-    isPointerDown = false;
-    event.target.releasePointerCapture(event.pointerId);
+    // 「遅」ボタン：回転速度を0.5倍にする
+    btnSlow.addEventListener('click', () => {
+        rotationSpeedX *= 0.5;
+        rotationSpeedY *= 0.5;
+    });
 }
 
 /**
