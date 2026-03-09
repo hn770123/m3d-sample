@@ -363,11 +363,10 @@ function animate() {
     cube.rotation.x += rotationSpeedX;
     cube.rotation.y += rotationSpeedY;
 
-    // Z軸の往復運動（約2秒で1往復）
-    // Math.sin(time * Math.PI) で周期2秒、振幅1cmで Z=1 を中心に ±1cm 動く
+    // Z軸の往復運動をX軸の回転サイクルに合わせる（回転速度に応じて往復も早くなる）
+    // 振幅は1cmで Z=1 を中心に ±1cm 動く
     if (cube) {
-        const time = clock.getElapsedTime();
-        cube.position.z = 1 + Math.sin(time * Math.PI) * 1.0;
+        cube.position.z = 1 + Math.sin(cube.rotation.x) * 1.0;
     }
 
     render();
