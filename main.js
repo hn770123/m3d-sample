@@ -1,3 +1,10 @@
+/**
+ * @file main.js
+ * @description 3Dレンダリングのメインスクリプト。Three.jsを利用してiPhoneのSafariなどのモバイルブラウザ上で、
+ *              裸眼立体視（平行法）ができるように画面を左右に分割してキューブを描画します。
+ *              また、タッチ操作によってキューブの回転速度やカメラとキューブとの距離を変更できます。
+ */
+
 import * as THREE from 'three';
 
 // 画面分割による平行法の立体視を行うためのパラメータ
@@ -13,11 +20,19 @@ let scene, renderer;
 let cameraLeft, cameraRight;
 let cube;
 
+// タッチインタラクション用の変数
+let rotationSpeedX = 0.005; // X軸の回転速度
+let rotationSpeedY = 0.01;  // Y軸の回転速度
+let cameraDistance = 4;     // カメラからキューブまでの距離(Z軸)
+let touchStartX = 0;        // タッチ開始時のX座標
+let touchStartY = 0;        // タッチ開始時のY座標
+
 init();
 animate();
 
 /**
- * 初期化処理
+ * Three.jsシーンの初期化処理
+ * シーン、カメラ、レンダラー、3Dオブジェクトの作成、および各種イベントリスナーの登録を行います。
  */
 function init() {
     // 1. Scene（シーン）の作成
@@ -81,12 +96,77 @@ function init() {
     cube = new THREE.LineSegments(edges, material);
     scene.add(cube);
 
-    // 5. リサイズイベントの登録
+    // 5. リサイズイベントとタッチイベントの登録
     window.addEventListener('resize', onWindowResize);
+
+    // タッチイベントの登録 (iOS Safari特有の挙動を防ぐため passive: false を指定)
+    window.addEventListener('touchstart', onTouchStart, { passive: false });
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
 }
 
 /**
- * ウィンドウサイズ変更時の処理
+ * タッチ開始時のイベントハンドラ
+ * @param {TouchEvent} event - タッチイベントオブジェクト
+ */
+function onTouchStart(event) {
+    if (event.touches.length > 0) {
+        touchStartX = event.touches[0].clientX;
+        touchStartY = event.touches[0].clientY;
+    }
+}
+
+/**
+ * タッチ移動中のイベントハンドラ
+ * @param {TouchEvent} event - タッチイベントオブジェクト
+ */
+function onTouchMove(event) {
+    // デフォルトのスクロール挙動（バウンスなど）を防止
+    event.preventDefault();
+
+    if (event.touches.length > 0) {
+        const touchCurrentX = event.touches[0].clientX;
+        const touchCurrentY = event.touches[0].clientY;
+
+        // X軸方向の移動量 (右スワイプでプラス、左スワイプでマイナス)
+        const deltaX = touchCurrentX - touchStartX;
+        // Y軸方向の移動量 (下スワイプでプラス、上スワイプでマイナス)
+        const deltaY = touchCurrentY - touchStartY;
+
+        // 1. 左右のスワイプによる回転速度の変更
+        // 感度調整係数
+        const sensitivityX = 0.0001;
+
+        // 右にスワイプ(deltaX > 0)すると速度が上がり、左にスワイプ(deltaX < 0)すると速度が下がる
+        rotationSpeedX += deltaX * sensitivityX;
+        rotationSpeedY += (deltaX * sensitivityX * 2); // Y軸の初期値が2倍だったのでそれに合わせる
+
+        // 左スワイプで速度がマイナスにならないよう、下限を0に設定
+        if (rotationSpeedX < 0) rotationSpeedX = 0;
+        if (rotationSpeedY < 0) rotationSpeedY = 0;
+
+        // 2. 上下のスワイプによるカメラ距離の変更
+        // 感度調整係数
+        const sensitivityY = 0.01;
+
+        // 上スワイプ(deltaY < 0)で遠ざかる(Z距離が増加)、下スワイプ(deltaY > 0)で近づく(Z距離が減少)
+        // ユーザーから見て、上にスワイプすると奥に行くイメージなので、deltaYをマイナスすることで実現する
+        cameraDistance -= deltaY * sensitivityY;
+
+        // 限界値は設けないが、Z軸距離がマイナスになると裏側に回ってしまうため、十分小さな値を下限とする
+        if (cameraDistance < 0.1) cameraDistance = 0.1;
+
+        cameraLeft.position.z = cameraDistance;
+        cameraRight.position.z = cameraDistance;
+
+        // 次の移動差分を計算するために、現在の座標を保存
+        touchStartX = touchCurrentX;
+        touchStartY = touchCurrentY;
+    }
+}
+
+/**
+ * ウィンドウサイズ変更時のイベントハンドラ
+ * 画面分割のアスペクト比を再計算し、カメラとレンダラーを更新します。
  */
 function onWindowResize() {
     // 画面の半分のサイズからアスペクト比を再計算
@@ -103,20 +183,23 @@ function onWindowResize() {
 }
 
 /**
- * アニメーションループ（毎フレームの描画処理）
+ * アニメーションループ
+ * 毎フレームごとにキューブの回転状態を更新し、レンダリング処理を呼び出します。
  */
 function animate() {
     requestAnimationFrame(animate);
 
-    // キューブをゆっくり回転させる
-    cube.rotation.x += 0.005;
-    cube.rotation.y += 0.01;
+    // 変数で管理している速度でキューブを回転させる
+    cube.rotation.x += rotationSpeedX;
+    cube.rotation.y += rotationSpeedY;
 
     render();
 }
 
 /**
  * 画面を左右に分割してレンダリングする処理
+ * シザーテスト(ScissorTest)とビューポート(Viewport)を利用して、画面の左半分と右半分に
+ * それぞれ別のカメラからの映像を描画します。
  */
 function render() {
     const width = window.innerWidth;
