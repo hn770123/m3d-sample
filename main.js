@@ -47,6 +47,7 @@ let rotationSpeedX = 0.005; // X軸の回転速度
 let rotationSpeedY = 0.01;  // Y軸の回転速度
 let currentCubeSize = 3.0;  // キューブの現在のサイズ(cm)
 let isDarkMode = true;      // 現在のモード（初期値は暗モード）
+let clock = new THREE.Clock(); // アニメーション用クロック
 
 init();
 setupControllers();
@@ -115,14 +116,14 @@ function setupLightsAndBackground() {
     dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     // 視点より少し右・上から当てることで影の形を立体的にする
     // 光源の位置を正面寄りにし、影が画面内に収まるように調整
-    dirLight.position.set(2, 4, 10);
+    dirLight.position.set(0, 0, cameraDistance);
     dirLight.castShadow = true;
 
     // シャドウマップの解像度と範囲の設定
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
-    dirLight.shadow.camera.near = 0.5;
-    dirLight.shadow.camera.far = 50;
+    dirLight.shadow.camera.near = 15;
+    dirLight.shadow.camera.far = 25;
     // 影の投影範囲を適切に絞る（大きすぎると影の解像度が落ちるため）
     dirLight.shadow.camera.left = -5;
     dirLight.shadow.camera.right = 5;
@@ -358,8 +359,16 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
 
+    // X軸・Y軸の回転
     cube.rotation.x += rotationSpeedX;
     cube.rotation.y += rotationSpeedY;
+
+    // Z軸の往復運動（約2秒で1往復）
+    // Math.sin(time * Math.PI) で周期2秒、振幅1cmで Z=1 を中心に ±1cm 動く
+    if (cube) {
+        const time = clock.getElapsedTime();
+        cube.position.z = 1 + Math.sin(time * Math.PI) * 1.0;
+    }
 
     render();
 }
