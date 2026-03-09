@@ -111,10 +111,11 @@ function setupLightsAndBackground() {
     scene.add(ambientLight);
 
     // --- 平行光源（太陽光のような光） ---
-    // 視点（Z=20付近）から斜めに当てて、奥（Z=-5）の背景に影を落とす
+    // 視点（Z=20付近）から斜めに当てて、奥（Z=-2）の背景に影を落とす
     dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     // 視点より少し右・上から当てることで影の形を立体的にする
-    dirLight.position.set(5, 5, 10);
+    // 光源の位置を正面寄りにし、影が画面内に収まるように調整
+    dirLight.position.set(2, 4, 10);
     dirLight.castShadow = true;
 
     // シャドウマップの解像度と範囲の設定
@@ -122,10 +123,11 @@ function setupLightsAndBackground() {
     dirLight.shadow.mapSize.height = 1024;
     dirLight.shadow.camera.near = 0.5;
     dirLight.shadow.camera.far = 50;
-    dirLight.shadow.camera.left = -10;
-    dirLight.shadow.camera.right = 10;
-    dirLight.shadow.camera.top = 10;
-    dirLight.shadow.camera.bottom = -10;
+    // 影の投影範囲を適切に絞る（大きすぎると影の解像度が落ちるため）
+    dirLight.shadow.camera.left = -5;
+    dirLight.shadow.camera.right = 5;
+    dirLight.shadow.camera.top = 5;
+    dirLight.shadow.camera.bottom = -5;
     dirLight.shadow.bias = -0.001;
     scene.add(dirLight);
 
@@ -138,8 +140,8 @@ function setupLightsAndBackground() {
         metalness: 0.1
     });
     shadowPlane = new THREE.Mesh(planeGeometry, planeMaterial);
-    // Z=-5 の位置に配置（キューブはZ=1なので奥に配置）
-    shadowPlane.position.z = -5;
+    // Z=-2 の位置に配置（キューブはZ=1なので奥に配置、以前より手前に寄せる）
+    shadowPlane.position.z = -2;
     shadowPlane.receiveShadow = true;
     scene.add(shadowPlane);
 }
@@ -284,6 +286,15 @@ function setupControllers() {
     const btnSmall = document.getElementById('btn-small');
     const btnFast = document.getElementById('btn-fast');
     const btnSlow = document.getElementById('btn-slow');
+    const btnReload = document.getElementById('btn-reload');
+
+    // 「更新」ボタン：キャッシュを回避してリロードする
+    btnReload.addEventListener('click', () => {
+        // 現在のURLを取得し、クエリパラメータでタイムスタンプを付与することでキャッシュを無効化してリロード
+        const url = new URL(window.location.href);
+        url.searchParams.set('t', Date.now());
+        window.location.href = url.toString();
+    });
 
     // 「明/暗」モード切り替えボタン
     btnMode.addEventListener('click', () => {
