@@ -70,7 +70,7 @@ function init() {
     renderer.setScissorTest(true);
     // 影のレンダリングを有効にする
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 柔らかい影
+    renderer.shadowMap.type = THREE.VSMShadowMap; // VSMを使用してより柔らかい影を表現する
     document.body.appendChild(renderer.domElement);
 
     // 3. Camera（カメラ）の作成
@@ -130,6 +130,12 @@ function setupLightsAndBackground() {
     dirLight.shadow.camera.top = 5;
     dirLight.shadow.camera.bottom = -5;
     dirLight.shadow.bias = -0.001;
+
+    // VSMを利用した自然で全体的に柔らかい影の表現のための調整
+    // radiusはぼかしの半径、blurSamplesはぼかしの滑らかさ（品質）を決定します
+    dirLight.shadow.radius = 8;
+    dirLight.shadow.blurSamples = 25;
+
     scene.add(dirLight);
 
     // --- 影を受けるための白い背景（床） ---
